@@ -1,0 +1,38 @@
+{
+  "name": "sentra-ai",
+  "version": "1.0.0",
+  "description": "AI-powered industrial maintenance assistant.",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "npx expo start",
+    "android": "npx expo start --android",
+    "ios": "npx expo start --ios",
+    "web": "npx expo start --web",
+    "test": "jest"
+  },
+  "keywords": [
+    "anomaly",
+    "alerts",
+    "maintenance"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "expo": "~53.0.20",
+    "expo-constants": "~17.1.6",
+    "expo-linking": "~7.1.7",
+    "expo-router": "~5.1.4",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "react-native": "0.79.6",
+    "react-native-gesture-handler": "~2.24.0",
+    "react-native-safe-area-context": "5.4.0",
+    "react-native-screens": "~4.11.1",
+    "react-native-web": "~0.20.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.0.10",
+    "babel-preset-expo": "~13.0.0",
+    "typescript": "~5.8.3"
+  }
+}
