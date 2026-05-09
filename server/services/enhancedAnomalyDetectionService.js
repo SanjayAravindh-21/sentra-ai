@@ -67,11 +67,44 @@ function calculateUnifiedRiskScore(detectionResult) {
 
 function generateExplanation(types) {
   const exp = [];
-  if (types.sudden_spike.length > 0) exp.push('Sudden spike in ' + types.sudden_spike[0].field);
-  if (types.gradual_drift.length > 0) exp.push('Gradual drift: ' + types.gradual_drift[0].field + ' ' + types.gradual_drift[0].direction.toLowerCase());
-  if (types.statistical_outlier.length > 0) exp.push(types.statistical_outlier[0].field + ' outlier');
-  if (types.multi_sensor.length > 0) exp.push('Multi-sensor: ' + types.multi_sensor[0].affectedMetrics.join(', '));
-  return exp.length > 0 ? exp.join('; ') : 'Normal operation';
+  
+  // Translate sensor patterns to equipment-level descriptions
+  if (types.sudden_spike.length > 0) {
+    const field = types.sudden_spike[0].field;
+    if (field === 'temp') exp.push('Sudden thermal load increase');
+    else if (field === 'pressure') exp.push('Abrupt pressure change');
+    else if (field === 'vibration') exp.push('Sudden mechanical stress increase');
+    else if (field === 'airflow') exp.push('Rapid airflow change');
+    else if (field === 'power') exp.push('Power consumption spike');
+    else exp.push('Sudden operational change in ' + field);
+  }
+  
+  if (types.gradual_drift.length > 0) {
+    const field = types.gradual_drift[0].field;
+    const dir = types.gradual_drift[0].direction.toLowerCase();
+    if (field === 'temp') exp.push('Progressive thermal ' + (dir === 'increasing' ? 'rise' : 'decline'));
+    else if (field === 'pressure') exp.push('Gradual pressure ' + (dir === 'increasing' ? 'buildup' : 'loss'));
+    else if (field === 'vibration') exp.push('Increasing mechanical stress');
+    else if (field === 'airflow') exp.push('Declining airflow efficiency');
+    else if (field === 'power') exp.push('Progressive power consumption change');
+    else exp.push('Gradual performance drift in ' + field);
+  }
+  
+  if (types.statistical_outlier.length > 0) {
+    const field = types.statistical_outlier[0].field;
+    if (field === 'temp') exp.push('Abnormal thermal operation');
+    else if (field === 'pressure') exp.push('Unusual pressure conditions');
+    else if (field === 'vibration') exp.push('Abnormal mechanical behavior');
+    else if (field === 'airflow') exp.push('Atypical airflow pattern');
+    else if (field === 'power') exp.push('Unusual power consumption');
+    else exp.push('Abnormal ' + field + ' behavior');
+  }
+  
+  if (types.multi_sensor.length > 0) {
+    exp.push('Multiple system parameters affected simultaneously');
+  }
+  
+  return exp.length > 0 ? exp.join('; ') : 'System operating normally';
 }
 
 function processSystemData(systemId, systemData) {

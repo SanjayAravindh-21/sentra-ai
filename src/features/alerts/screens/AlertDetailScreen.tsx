@@ -17,26 +17,43 @@ import { getRelativeTime, getActionTimeframe } from '@/shared/utils/formatUtils'
 
 export const AlertDetailScreen: React.FC = () => {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, alertData } = useLocalSearchParams<{ id: string; alertData?: string }>();
   const [alert, setAlert] = useState<Alert | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadAlert();
-  }, [id]);
 
   const loadAlert = useCallback(async () => {
     try {
       setLoading(true);
+      
+      // First, try to use the passed alert data to avoid race conditions
+      if (alertData) {
+        try {
+          const parsedAlert = JSON.parse(alertData as string);
+          setAlert(parsedAlert);
+          console.log('📋 Alert detail loaded from params:', parsedAlert.system.name, 'Risk:', parsedAlert.riskScore);
+          setLoading(false);
+          return;
+        } catch (parseError) {
+          console.error('Failed to parse alert data, fetching fresh:', parseError);
+        }
+      }
+      
+      // Fallback: fetch fresh data if no alert data was passed
       const alerts = await getAllAlerts();
       const found = alerts.find(a => a.id === id);
       setAlert(found || null);
+      console.log('📋 Alert detail fetched from API:', found?.system.name, 'Risk:', found?.riskScore);
     } catch (err) {
       console.error('Failed to load alert:', err);
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, alertData]);
+
+  // Load alert ONCE on mount only - don't refresh on every focus
+  useEffect(() => {
+    loadAlert();
+  }, [loadAlert]);
 
   if (loading) {
     return (
@@ -78,6 +95,11 @@ export const AlertDetailScreen: React.FC = () => {
     }
   };
 
+  const getSeverityLabel = (severity: string): string => {
+    // Use severity labels as-is for clarity
+    return severity;
+  };
+
   const relativeTime = getRelativeTime(alert.timestamp);
   const actionTimeframe = getActionTimeframe(alert.riskScore || 0);
 
@@ -106,7 +128,7 @@ export const AlertDetailScreen: React.FC = () => {
             <Text style={styles.riskLabel}>RISK LEVEL</Text>
             <Text style={styles.riskValue}>{alert.riskScore || 0}</Text>
             <View style={styles.severityContainer}>
-              <Text style={styles.severityLabel}>{alert.severity} PRIORITY</Text>
+              <Text style={styles.severityLabel}>{getSeverityLabel(alert.severity)} PRIORITY</Text>
             </View>
           </View>
           <View style={styles.timeframeContainer}>
@@ -170,17 +192,18 @@ export const AlertDetailScreen: React.FC = () => {
         </View>
 
         {/* Affected Sensors - Compact Display */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Affected Sensors</Text>
-          <View style={styles.metricsCard}>
-            {alert.metrics
-              .filter((m) => {
-                // Only show sensors that are actually affected (CRITICAL or WARNING) and have valid values
-                const isAffected = m.status === 'CRITICAL' || m.status === 'WARNING';
-                const hasValidValue = m.value != null && !isNaN(m.value) && m.value !== 0;
-                return isAffected && hasValidValue;
-              })
-              .map((metric) => {
+        {(alert.riskScore || 0) > 0 && alert.metrics.filter(m => m.status === 'CRITICAL' || m.status === 'WARNING').length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Affected Sensors</Text>
+            <View style={styles.metricsCard}>
+              {alert.metrics
+                .filter((m) => {
+                  // Only show sensors that are actually affected (CRITICAL or WARNING)
+                  const isAffected = m.status === 'CRITICAL' || m.status === 'WARNING';
+                  const hasValidValue = m.value != null && !isNaN(m.value);
+                  return isAffected && hasValidValue;
+                })
+                .map((metric) => {
                 // Smart decimal formatting based on value magnitude
                 let formattedValue;
                 if (metric.value < 0.1) {
@@ -205,6 +228,7 @@ export const AlertDetailScreen: React.FC = () => {
               })}
           </View>
         </View>
+        )}
 
         <View style={{ height: 30 }} />
       </ScrollView>

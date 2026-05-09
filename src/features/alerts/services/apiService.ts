@@ -96,6 +96,21 @@ export interface APIStats {
 
 // Convert API alert to app Alert format
 function convertAPIAlert(apiAlert: APIAlert): Alert {
+  // Helper to determine if a sensor is affected
+  const isMetricAffected = (fieldName: string, value: number, normalRange: { min: number; max: number }): boolean => {
+    // Check if explicitly listed in affectedMetrics
+    if (apiAlert.affectedMetrics && apiAlert.affectedMetrics.includes(fieldName)) {
+      return true;
+    }
+    
+    // Fallback: For medium/high/critical alerts, check if value is outside normal range
+    if (apiAlert.riskScore >= 25) {
+      return value < normalRange.min || value > normalRange.max;
+    }
+    
+    return false;
+  };
+
   return {
     id: apiAlert.systemId,
     system: {
@@ -121,7 +136,7 @@ function convertAPIAlert(apiAlert: APIAlert): Alert {
         type: 'temperature',
         value: apiAlert.sensorData.temperature,
         unit: '°C',
-        status: apiAlert.affectedMetrics.includes('temp') ? 'CRITICAL' : 'NORMAL',
+        status: isMetricAffected('temp', apiAlert.sensorData.temperature, { min: 20, max: 45 }) ? 'CRITICAL' : 'NORMAL',
         normalRange: { min: 20, max: 45 },
         trend: 'stable',
       },
@@ -131,7 +146,7 @@ function convertAPIAlert(apiAlert: APIAlert): Alert {
         type: 'pressure',
         value: apiAlert.sensorData.pressure,
         unit: 'bar',
-        status: apiAlert.affectedMetrics.includes('pressure') ? 'CRITICAL' : 'NORMAL',
+        status: isMetricAffected('pressure', apiAlert.sensorData.pressure, { min: 0.8, max: 1.5 }) ? 'CRITICAL' : 'NORMAL',
         normalRange: { min: 0.8, max: 1.5 },
         trend: 'stable',
       },
@@ -141,7 +156,7 @@ function convertAPIAlert(apiAlert: APIAlert): Alert {
         type: 'airflow',
         value: apiAlert.sensorData.airflow,
         unit: 'CFM',
-        status: apiAlert.affectedMetrics.includes('airflow') ? 'CRITICAL' : 'NORMAL',
+        status: isMetricAffected('airflow', apiAlert.sensorData.airflow, { min: 200, max: 400 }) ? 'CRITICAL' : 'NORMAL',
         normalRange: { min: 200, max: 400 },
         trend: 'stable',
       },
@@ -151,7 +166,7 @@ function convertAPIAlert(apiAlert: APIAlert): Alert {
         type: 'vibration',
         value: apiAlert.sensorData.vibration,
         unit: 'mm/s',
-        status: apiAlert.affectedMetrics.includes('vibration') ? 'CRITICAL' : 'NORMAL',
+        status: isMetricAffected('vibration', apiAlert.sensorData.vibration, { min: 0.02, max: 0.2 }) ? 'CRITICAL' : 'NORMAL',
         normalRange: { min: 0.02, max: 0.2 },
         trend: 'stable',
       },
@@ -161,7 +176,7 @@ function convertAPIAlert(apiAlert: APIAlert): Alert {
         type: 'power',
         value: apiAlert.sensorData.power,
         unit: 'kW',
-        status: apiAlert.affectedMetrics.includes('power') ? 'CRITICAL' : 'NORMAL',
+        status: isMetricAffected('power', apiAlert.sensorData.power, { min: 5, max: 10 }) ? 'CRITICAL' : 'NORMAL',
         normalRange: { min: 5, max: 10 },
         trend: 'stable',
       },
@@ -171,6 +186,7 @@ function convertAPIAlert(apiAlert: APIAlert): Alert {
     anomalyTypes: apiAlert.anomalyTypes,
     detectionMethods: apiAlert.detectionMethods,
     riskScore: apiAlert.riskScore,
+    affectedMetrics: apiAlert.affectedMetrics,
   };
 }
 

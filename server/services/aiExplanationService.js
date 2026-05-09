@@ -151,27 +151,38 @@ function buildPrompt(alert) {
   if (alert.anomalyTypes.trend_deviation) anomalyTypes.push('trend deviation');
   if (alert.anomalyTypes.multi_sensor) anomalyTypes.push('multi-sensor correlation');
 
-  return `You are an HVAC maintenance assistant. Analyze this anomaly:
+  return `You are an HVAC predictive maintenance assistant helping technicians diagnose equipment issues.
 
 System: ${alert.systemName}
 Risk Score: ${alert.riskScore}/100
-Anomaly Types: ${anomalyTypes.join(', ')}
-Affected Sensors: ${alert.affectedMetrics.join(', ')}
+Detected Patterns: ${anomalyTypes.join(', ')}
+Affected Measurements: ${alert.affectedMetrics.join(', ')}
+
+🎯 CRITICAL INSTRUCTION:
+Prefer explaining likely HVAC system or equipment behavior rather than assuming sensor failure.
+
+Only mention sensor faults, calibration issues, or thermocouple problems if the anomaly pattern strongly indicates impossible readings, stuck values, missing data, or obvious sensor malfunction.
+
+Instead, focus on:
+- Equipment condition (wear, strain, degradation)
+- Operational issues (airflow restriction, thermal efficiency, mechanical stress)
+- System behavior (performance drift, load changes, component interaction)
+- Maintenance implications (preventive actions, inspection priorities)
 
 Provide:
-1. Brief summary (max 12 words)
-2. Likely cause (max 15 words)
-3. Recommended action (max 18 words, urgent and specific)
-4. Why this matters (max 15 words, explain impact)
+1. Brief summary describing EQUIPMENT/SYSTEM issue (max 12 words)
+2. Likely EQUIPMENT-LEVEL cause (max 18 words)
+3. Recommended MAINTENANCE action (max 20 words, specific and actionable)
+4. Operational impact (max 18 words)
 
-Rules: Be specific, technical but clear, actionable. If uncertain say "possible" or "likely". Focus on real technician needs.
+Rules: Be technician-focused, operational, actionable. Use "possible" or "likely" for uncertainty. Avoid robotic sensor-diagnostic language.
 
 Return ONLY valid JSON:
 {
-  "summary": "brief description",
-  "possibleCause": "likely root cause",
-  "recommendedAction": "specific next steps",
-  "whyMatters": "operational impact"
+  "summary": "equipment/system-focused description",
+  "possibleCause": "equipment-level root cause",
+  "recommendedAction": "specific maintenance action",
+  "whyMatters": "operational/business impact"
 }`;
 }
 
@@ -201,30 +212,68 @@ function parseResponse(response, alert) {
 
 function getFallbackExplanation(alert) {
   const riskScore = alert.riskScore || 0;
-  const affected = alert.affectedMetrics.slice(0, 2).join(' and ') || 'sensors';
+  const systemType = alert.systemName.toLowerCase();
+  
+  // Map affected metrics to equipment-level issues
+  const hasTemp = alert.affectedMetrics.some(m => m === 'temp' || m === 'temperature');
+  const hasPressure = alert.affectedMetrics.some(m => m === 'pressure');
+  const hasVibration = alert.affectedMetrics.some(m => m === 'vibration');
+  const hasAirflow = alert.affectedMetrics.some(m => m === 'airflow');
+  const hasPower = alert.affectedMetrics.some(m => m === 'power');
 
   let summary, cause, action, whyMatters;
   
   if (riskScore >= 75) {
-    summary = `Critical ${affected} anomaly detected`;
-    cause = 'Likely equipment failure or critical malfunction';
-    action = 'Immediate inspection required - shutdown if worsening';
-    whyMatters = 'Risk of complete system failure and downtime';
+    // Critical: Equipment-level failure
+    if (systemType.includes('compressor')) {
+      summary = 'Compressor operating outside critical thresholds';
+      cause = 'Likely mechanical stress, bearing wear, or refrigerant system issue';
+      action = 'Immediate inspection required - assess shutdown risk and mechanical condition';
+    } else if (systemType.includes('chiller')) {
+      summary = 'Chiller system showing critical performance deviation';
+      cause = 'Possible refrigerant leak, evaporator fouling, or compressor failure';
+      action = 'Emergency assessment needed - check refrigerant levels and heat exchange surfaces';
+    } else if (systemType.includes('boiler')) {
+      summary = 'Boiler operating in critical abnormal state';
+      cause = 'Possible combustion issue, heat exchanger fouling, or circulation problem';
+      action = 'Immediate inspection - verify combustion efficiency and water circulation';
+    } else {
+      summary = 'Critical equipment performance deviation detected';
+      cause = 'Likely component failure or severe operational degradation';
+      action = 'Immediate inspection required - assess shutdown risk and component condition';
+    }
+    whyMatters = 'High risk of equipment failure and unplanned downtime';
   } else if (riskScore >= 50) {
-    summary = `Significant ${affected} deviation detected`;
-    cause = 'Possible component wear or degradation';
-    action = 'Schedule inspection within 24 hours';
-    whyMatters = 'Could escalate to critical failure if ignored';
-  } else if (riskScore >= 30) {
-    summary = `Minor ${affected} anomaly detected`;
-    cause = 'Possible normal variation or minor drift';
-    action = 'Monitor system and check if pattern continues';
-    whyMatters = 'Early detection helps prevent larger issues';
+    // High: Degrading equipment
+    if (hasVibration && hasTemp) {
+      summary = 'Elevated mechanical stress and thermal load detected';
+      cause = 'Possible bearing wear, misalignment, or lubrication issue affecting heat dissipation';
+      action = 'Schedule maintenance inspection within 24 hours - check bearings and alignment';
+    } else if (hasPressure && hasAirflow) {
+      summary = 'Airflow and pressure patterns indicate system restriction';
+      cause = 'Likely filter blockage, duct obstruction, or damper malfunction';
+      action = 'Inspect airflow pathways, replace filters, and check damper operation';
+    } else if (hasTemp) {
+      summary = 'Abnormal thermal operation detected';
+      cause = 'Possible heat exchanger efficiency loss or thermal control degradation';
+      action = 'Inspect heat transfer surfaces and verify control system calibration';
+    } else {
+      summary = 'Equipment operating outside normal performance range';
+      cause = 'Possible component wear, efficiency loss, or operational stress';
+      action = 'Schedule inspection within 24 hours to assess component condition';
+    }
+    whyMatters = 'Could escalate to failure if maintenance is deferred';
+  } else if (riskScore >= 25) {
+    // Medium: Early degradation
+    summary = 'Minor equipment performance drift detected';
+    cause = 'Possible early wear, loading changes, or gradual efficiency degradation';
+    action = 'Monitor trend and schedule routine inspection if pattern persists';
+    whyMatters = 'Early detection enables preventive maintenance planning';
   } else {
-    summary = 'Low-level variation detected';
-    cause = 'Likely normal operational variation';
-    action = 'No immediate action required - continue monitoring';
-    whyMatters = 'System operating within acceptable parameters';
+    summary = 'Equipment operating within normal variation';
+    cause = 'Likely normal operational variation or load-related fluctuation';
+    action = 'Continue routine monitoring - no immediate action required';
+    whyMatters = 'System performance within acceptable operational parameters';
   }
 
   return { summary, possibleCause: cause, recommendedAction: action, whyMatters };

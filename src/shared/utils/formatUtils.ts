@@ -24,11 +24,12 @@ export function getRelativeTime(timestamp: string): string {
 
 /**
  * Get urgency level from risk score
+ * Matches backend severity thresholds: CRITICAL >= 75, HIGH >= 50, MEDIUM >= 25
  */
 export function getUrgencyLevel(riskScore: number): string {
-  if (riskScore >= 75) return 'URGENT';
+  if (riskScore >= 75) return 'CRITICAL';
   if (riskScore >= 50) return 'HIGH';
-  if (riskScore >= 30) return 'MEDIUM';
+  if (riskScore >= 25) return 'MEDIUM';
   return 'LOW';
 }
 

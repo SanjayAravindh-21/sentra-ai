@@ -1,5 +1,6 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator, RefreshControl, StatusBar, Platform } from 'react-native';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator, RefreshControl, StatusBar, Platform, AppState } from 'react-native';
+import type { AppStateStatus } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AlertCard } from '@/shared/components/AlertCard';
 import { getAllAlerts } from '@/features/alerts/services/apiService';
@@ -11,19 +12,17 @@ export const DashboardScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadAlerts();
-    // Refresh every 60 seconds (reduced from 30 for performance)
-    const interval = setInterval(loadAlerts, 60000);
-    return () => clearInterval(interval);
-  }, []);
+  const appState = useRef(AppState.currentState);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastRefreshRef = useRef<number>(0);
 
   const loadAlerts = useCallback(async () => {
     try {
       setError(null);
       const data = await getAllAlerts();
       setAlerts(data);
+      lastRefreshRef.current = Date.now();
+      console.log('✅ Alerts refreshed:', data.length, 'alerts loaded');
     } catch (err) {
       console.error('Failed to load alerts:', err);
       setError('Failed to load alerts. Check backend server on localhost:3000');
@@ -33,13 +32,62 @@ export const DashboardScreen: React.FC = () => {
     }
   }, []);
 
+  // Initial load only
+  useEffect(() => {
+    loadAlerts();
+  }, [loadAlerts]);
+
+  // Handle app state changes (background/foreground) - for mobile
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        // App has come to foreground - refresh data
+        console.log('🔄 App came to foreground - refreshing alerts');
+        loadAlerts();
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [loadAlerts]);
+
+  // Set up polling interval - 30 seconds for real-time updates
+  useEffect(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+
+    intervalRef.current = setInterval(() => {
+      console.log('⏰ Polling interval - refreshing alerts');
+      loadAlerts();
+    }, 30000); // 30 seconds for better real-time updates
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [loadAlerts]);
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadAlerts();
   }, [loadAlerts]);
 
-  const handleAlertPress = useCallback((alertId: string) => {
-    router.push({ pathname: '/(tabs)/alert-detail', params: { id: alertId } });
+  const handleAlertPress = useCallback((alert: Alert) => {
+    // Pass the full alert data to avoid race conditions with changing data
+    router.push({ 
+      pathname: '/(tabs)/alert-detail', 
+      params: { 
+        id: alert.id,
+        alertData: JSON.stringify(alert)
+      } 
+    });
   }, [router]);
 
   // Sort alerts by risk score (highest first)
@@ -48,35 +96,42 @@ export const DashboardScreen: React.FC = () => {
     [alerts]
   );
 
-  const topPriorityAlerts = React.useMemo(
-    () => sortedAlerts.filter(a => (a.riskScore || 0) >= 50),
+  // Separate critical and urgent alerts
+  const criticalAlerts = React.useMemo(
+    () => sortedAlerts.filter(a => a.severity === 'CRITICAL'),
+    [sortedAlerts]
+  );
+
+  const urgentAlerts = React.useMemo(
+    () => sortedAlerts.filter(a => a.severity === 'HIGH'),
     [sortedAlerts]
   );
 
   const remainingAlerts = React.useMemo(
-    () => sortedAlerts.filter(a => (a.riskScore || 0) < 50),
+    () => sortedAlerts.filter(a => a.severity !== 'CRITICAL' && a.severity !== 'HIGH'),
     [sortedAlerts]
   );
 
   const renderHeader = () => {
+    // Count by actual severity
     const criticalCount = alerts.filter((a) => a.severity === 'CRITICAL').length;
     const highCount = alerts.filter((a) => a.severity === 'HIGH').length;
-    const urgentCount = topPriorityAlerts.length;
+    const totalUrgentAndCritical = highCount + criticalCount;
 
     return (
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>HVAC Monitoring</Text>
           <Text style={styles.headerSubtitle}>
-            {urgentCount > 0 ? `${urgentCount} urgent` : 'All systems monitored'}
+            {totalUrgentAndCritical > 0 ? `${totalUrgentAndCritical} need attention` : 'All systems monitored'}
           </Text>
         </View>
 
         <View style={styles.statsContainer}>
-          {urgentCount > 0 && (
+          {highCount > 0 && (
             <View style={[styles.statBadge, styles.urgentBadge]}>
-              <Text style={styles.statNumber}>{urgentCount}</Text>
-              <Text style={styles.statLabel}>Urgent</Text>
+              <Text style={styles.statNumber}>{highCount}</Text>
+              <Text style={styles.statLabel}>High</Text>
             </View>
           )}
           {criticalCount > 0 && (
@@ -125,20 +180,39 @@ export const DashboardScreen: React.FC = () => {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2c3e50']} />
           }
         >
-          {/* Top Priority Alerts - Risk >= 50 */}
-          {topPriorityAlerts.length > 0 && (
+          {/* Critical Alerts */}
+          {criticalAlerts.length > 0 && (
             <View style={styles.prioritySection}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>🚨 URGENT ATTENTION NEEDED</Text>
+                <Text style={styles.sectionTitle}>🔴 CRITICAL PRIORITY</Text>
                 <Text style={styles.sectionSubtitle}>
-                  {topPriorityAlerts.length} system{topPriorityAlerts.length > 1 ? 's' : ''} require immediate action
+                  {criticalAlerts.length} system{criticalAlerts.length > 1 ? 's' : ''} require immediate action
                 </Text>
               </View>
-              {topPriorityAlerts.map((alert) => (
+              {criticalAlerts.map((alert) => (
                 <AlertCard
                   key={alert.id}
                   alert={alert}
-                  onPress={() => handleAlertPress(alert.id)}
+                  onPress={() => handleAlertPress(alert)}
+                />
+              ))}
+            </View>
+          )}
+
+          {/* High Priority Alerts */}
+          {urgentAlerts.length > 0 && (
+            <View style={styles.prioritySection}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>🟠 HIGH PRIORITY</Text>
+                <Text style={styles.sectionSubtitle}>
+                  {urgentAlerts.length} system{urgentAlerts.length > 1 ? 's' : ''} require prompt action
+                </Text>
+              </View>
+              {urgentAlerts.map((alert) => (
+                <AlertCard
+                  key={alert.id}
+                  alert={alert}
+                  onPress={() => handleAlertPress(alert)}
                 />
               ))}
             </View>
@@ -157,7 +231,7 @@ export const DashboardScreen: React.FC = () => {
                 <AlertCard
                   key={alert.id}
                   alert={alert}
-                  onPress={() => handleAlertPress(alert.id)}
+                  onPress={() => handleAlertPress(alert)}
                 />
               ))}
             </View>
@@ -218,10 +292,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   urgentBadge: {
-    backgroundColor: '#d32f2f',
+    backgroundColor: '#f57c00', // Orange for urgent/high priority
   },
   criticalBadge: {
-    backgroundColor: '#f57c00',
+    backgroundColor: '#d32f2f', // Red for critical
   },
   statNumber: {
     fontSize: 22,

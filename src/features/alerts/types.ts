@@ -20,6 +20,7 @@ export interface Alert {
     [key: string]: number;
   };
   riskScore?: number; // 0-100
+  affectedMetrics?: string[]; // List of affected metric field names (e.g., ['temp', 'pressure'])
   // LLM-generated explanation
   explanation?: Explanation;
 }
